@@ -1,4 +1,4 @@
-module add_1024bit_sequential(
+module add_1024_bit(
     input  wire clk,
     input  wire rst,
     input  wire start,             // Tín hiệu bắt đầu tính toán
