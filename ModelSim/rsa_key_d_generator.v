@@ -19,6 +19,9 @@ module rsa_key_d_generator (
     localparam START_D_DIV   = 4'd5;
     localparam WAIT_D_DIV    = 4'd6;
     localparam STATE_DONE    = 4'd7;
+    localparam MULT_ADD_LO   = 4'd8;
+    localparam MULT_ADD_HI   = 4'd9;
+    localparam MULT_SHIFT    = 4'd10;
 
     reg [3:0] state;                // Thanh ghi luu tru trang thai FSM
     reg [1023:0] phi_reg;           // Thanh ghi luu gia tri phi dau vao
@@ -34,6 +37,17 @@ module rsa_key_d_generator (
     reg [5:0]         inv_cnt;      // Bo dem khong che so vong lap toi da 40 chu ky
 
     reg [1040:0]      d_numerator;  // Thanh ghi dem luu tu so cua bieu thuc tinh d
+    reg [1151:0]      mult_accum;
+    reg [1151:0]      mult_phi_shift;
+    reg [16:0]        mult_k;
+    reg [4:0]         mult_cnt;
+    reg [5:0]         mult_chunk_idx;
+    reg               mult_carry;
+
+    wire [32:0]       mult_chunk_sum =
+        {1'b0, mult_accum[mult_chunk_idx * 32 +: 32]} +
+        {1'b0, mult_phi_shift[mult_chunk_idx * 32 +: 32]} +
+        mult_carry;
 
     reg inv_div_start;
     wire [31:0] inv_div_quotient;
@@ -103,6 +117,12 @@ module rsa_key_d_generator (
             new_r        <= 32'sd0;
             inv_cnt      <= 6'd0;
             d_numerator  <= 1041'd0;
+            mult_accum   <= 1152'd0;
+            mult_phi_shift <= 1152'd0;
+            mult_k       <= 17'd0;
+            mult_cnt     <= 5'd0;
+            mult_chunk_idx <= 6'd0;
+            mult_carry   <= 1'b0;
             inv_div_start <= 1'b0;
             d_div_start   <= 1'b0;
         end else begin
@@ -168,8 +188,41 @@ module rsa_key_d_generator (
                 end
 
                 CALC_MULT: begin
-                    d_numerator <= ({17'd0, phi_reg} * comb_key_k) + 1041'd1;
-                    state       <= START_D_DIV; 
+                    mult_accum     <= 1152'd1;
+                    mult_phi_shift <= {111'd0, 17'd0, phi_reg};
+                    mult_k         <= comb_key_k;
+                    mult_cnt       <= 5'd0;
+                    state          <= MULT_ADD_LO;
+                end
+
+                MULT_ADD_LO: begin
+                    if (mult_cnt == 5'd17) begin
+                        d_numerator <= mult_accum[1040:0];
+                        state       <= START_D_DIV;
+                    end else if (mult_k[0]) begin
+                        mult_chunk_idx <= 6'd0;
+                        mult_carry     <= 1'b0;
+                        state          <= MULT_ADD_HI;
+                    end else begin
+                        state <= MULT_SHIFT;
+                    end
+                end
+
+                MULT_ADD_HI: begin
+                    mult_accum[mult_chunk_idx * 32 +: 32] <= mult_chunk_sum[31:0];
+                    mult_carry <= mult_chunk_sum[32];
+                    if (mult_chunk_idx == 6'd35) begin
+                        state <= MULT_SHIFT;
+                    end else begin
+                        mult_chunk_idx <= mult_chunk_idx + 6'd1;
+                    end
+                end
+
+                MULT_SHIFT: begin
+                    mult_phi_shift <= mult_phi_shift << 1;
+                    mult_k         <= mult_k >> 1;
+                    mult_cnt       <= mult_cnt + 5'd1;
+                    state          <= MULT_ADD_LO;
                 end
 
                 START_D_DIV: begin
