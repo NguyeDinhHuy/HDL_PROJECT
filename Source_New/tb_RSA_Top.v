@@ -62,7 +62,7 @@ module tb_RSA_top;
         #20;
         start        = 1'b0;
 
-        @(posedge uut.r2_ready);
+        @(posedge uut.keygen_ready);
         #1;
         $display("--------------------------------------------------");
         $display("[KHOI SINH KHOA AN TOAN]");
