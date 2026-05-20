@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module tb_RSA_Top;
+module tb_RSA_top;
 
     reg          clk;
     reg          rst_n;
@@ -46,7 +46,7 @@ module tb_RSA_Top;
         plaintext_in  = 936'd0;
         ciphertext_in = 1024'd0;
         prime_addr    = 7'd48; 
-        tb_plaintext  = 936'd23520624; 
+        tb_plaintext  = 936'd23520633; 
 
         #100;
         rst_n = 1'b1; 
@@ -62,7 +62,7 @@ module tb_RSA_Top;
         #20;
         start        = 1'b0;
 
-        @(posedge uut.r2_ready);
+        @(posedge uut.keygen_ready);
         #1;
         $display("--------------------------------------------------");
         $display("[KHOI SINH KHOA AN TOAN]");
@@ -72,7 +72,6 @@ module tb_RSA_Top;
         $display(" -> Phi N         : 0x%h", uut.phi_reg);
         $display(" -> Khoa cong khai e: %d", 1024'd65537);
         $display(" -> Khoa rieng tu d : 0x%h", uut.d_reg);
-        $display(" -> Hang so R^2   : 0x%h", uut.r2_reg);
         $display("--------------------------------------------------");
 
         @(posedge uut.u_padding_wrapper.ready);
@@ -80,7 +79,7 @@ module tb_RSA_Top;
         if (mode == 1'b0) begin
             #1;
             $display("[GIAI DOAN MA HOA - TIEN XU LY]");
-            $display(" -> Du lieu thong diep goc: 0x%h", uut.u_padding_wrapper.message_in_936);
+            $display(" -> Du lieu thong diep goc: %d (Hex compact: 0x%0h)", uut.u_padding_wrapper.message_in_936, uut.u_padding_wrapper.message_in_936);
             $display(" -> Ket qua chen bit PKCS v1.5 (1024-bit): 0x%h", uut.pad_out_reg);
         end
 

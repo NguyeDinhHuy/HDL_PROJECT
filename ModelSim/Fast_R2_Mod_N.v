@@ -8,122 +8,153 @@ module Fast_R2_Mod_N (
     output reg           done
 );
 
-    localparam IDLE     = 4'd0;
-    localparam PREP     = 4'd1;
-    localparam CMP_INIT = 4'd2;
-    localparam CMP      = 4'd3;
-    localparam SUB_INIT = 4'd4;
-    localparam SUB      = 4'd5;
-    localparam CALC     = 4'd6;
-    localparam DONE     = 4'd7;
+    localparam CHUNK_WIDTH = 32;
+    localparam CHUNK_COUNT = 33; // 1025 bit, padded to 33 x 32-bit words
 
-    localparam PAD_WIDTH = 1152;
-    localparam LAST_CHUNK = 6'd35;
+    localparam IDLE       = 3'd0;
+    localparam SHIFT      = 3'd1;
+    localparam CMP_READ   = 3'd2;
+    localparam CMP_UPDATE = 3'd3;
+    localparam SUB_READ   = 3'd4;
+    localparam SUB_WRITE  = 3'd5;
+    localparam FINISH     = 3'd6;
 
-    reg [3:0]    state;
-    reg [11:0]   count;
-    reg [1024:0] V;
-    reg [PAD_WIDTH-1:0] V_shifted_pad;
-    reg [PAD_WIDTH-1:0] n_pad;
-    reg [PAD_WIDTH-1:0] V_sub_pad;
-    reg                 is_greater_or_equal_reg;
-    reg                 sub_borrow;
-    reg [5:0]           chunk_idx;
-    reg [5:0]           cmp_idx;
+    reg [2:0]  state;
+    reg [11:0] count;
+    reg [5:0]  word_idx;
+    reg        cmp_decided;
+    reg        cmp_ge;
+    reg        borrow;
+    reg [31:0] work_read;
+    reg [31:0] n_read;
 
-    wire [31:0] cmp_v_chunk = V_shifted_pad[cmp_idx * 32 +: 32];
-    wire [31:0] cmp_n_chunk = n_pad[cmp_idx * 32 +: 32];
+    reg [CHUNK_WIDTH-1:0] work_words [0:CHUNK_COUNT-1];
+    reg [CHUNK_WIDTH-1:0] n_words    [0:CHUNK_COUNT-1];
 
-    wire [32:0] sub_diff =
-        {1'b0, V_shifted_pad[chunk_idx * 32 +: 32]} -
-        {1'b0, n_pad[chunk_idx * 32 +: 32]} -
-        sub_borrow;
+    wire [32:0] sub_word = {1'b0, work_read} - {1'b0, n_read} - borrow;
+
+    integer i;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            state                   <= IDLE;
-            V                       <= 1025'd0;
-            V_shifted_pad           <= {PAD_WIDTH{1'b0}};
-            n_pad                   <= {PAD_WIDTH{1'b0}};
-            V_sub_pad               <= {PAD_WIDTH{1'b0}};
-            is_greater_or_equal_reg <= 1'b0;
-            sub_borrow              <= 1'b0;
-            chunk_idx               <= 6'd0;
-            cmp_idx                 <= 6'd0;
-            count                   <= 12'd0;
-            r2_mod_n                <= 1024'd0;
-            done                    <= 1'b0;
+            state       <= IDLE;
+            count       <= 12'd0;
+            word_idx    <= 6'd0;
+            cmp_decided <= 1'b0;
+            cmp_ge      <= 1'b0;
+            borrow      <= 1'b0;
+            work_read   <= 32'd0;
+            n_read      <= 32'd0;
+            r2_mod_n    <= 1024'd0;
+            done        <= 1'b0;
+
+            for (i = 0; i < CHUNK_COUNT; i = i + 1) begin
+                work_words[i] <= 32'd0;
+                n_words[i]    <= 32'd0;
+            end
         end else begin
             case (state)
                 IDLE: begin
                     done <= 1'b0;
                     if (start) begin
-                        V             <= 1025'd1;
-                        V_shifted_pad <= {PAD_WIDTH{1'b0}};
-                        n_pad         <= {127'd0, 1'b0, n};
-                        V_sub_pad     <= {PAD_WIDTH{1'b0}};
-                        count         <= 12'd0;
-                        state         <= PREP;
+                        count       <= 12'd0;
+                        word_idx    <= 6'd0;
+                        cmp_decided <= 1'b0;
+                        cmp_ge      <= 1'b0;
+                        borrow      <= 1'b0;
+                        r2_mod_n    <= 1024'd0;
+
+                        work_words[0] <= 32'd1;
+                        for (i = 1; i < CHUNK_COUNT; i = i + 1) begin
+                            work_words[i] <= 32'd0;
+                        end
+
+                        for (i = 0; i < 32; i = i + 1) begin
+                            n_words[i] <= n[i * CHUNK_WIDTH +: CHUNK_WIDTH];
+                        end
+                        n_words[32] <= 32'd0;
+
+                        state <= SHIFT;
                     end
                 end
 
-                PREP: begin
-                    if (count < 12'd2048) begin
-                        V_shifted_pad <= {126'd0, V, 1'b0};
-                        state         <= CMP_INIT;
+                SHIFT: begin
+                    if (count == 12'd2048) begin
+                        for (i = 0; i < 32; i = i + 1) begin
+                            r2_mod_n[i * CHUNK_WIDTH +: CHUNK_WIDTH] <= work_words[i];
+                        end
+                        state <= FINISH;
                     end else begin
-                        state <= DONE;
+                        work_words[0] <= {work_words[0][30:0], 1'b0};
+                        for (i = 1; i < CHUNK_COUNT; i = i + 1) begin
+                            work_words[i] <= {work_words[i][30:0], work_words[i-1][31]};
+                        end
+
+                        word_idx    <= 6'd32;
+                        cmp_decided <= 1'b0;
+                        cmp_ge      <= 1'b1;
+                        state       <= CMP_READ;
                     end
                 end
 
-                CMP_INIT: begin
-                    cmp_idx                 <= LAST_CHUNK;
-                    is_greater_or_equal_reg <= 1'b0;
-                    state                   <= CMP;
+                CMP_READ: begin
+                    work_read <= work_words[word_idx];
+                    n_read    <= n_words[word_idx];
+                    state     <= CMP_UPDATE;
                 end
 
-                CMP: begin
-                    if (cmp_v_chunk > cmp_n_chunk) begin
-                        is_greater_or_equal_reg <= 1'b1;
-                        state                   <= SUB_INIT;
-                    end else if (cmp_v_chunk < cmp_n_chunk) begin
-                        is_greater_or_equal_reg <= 1'b0;
-                        V_sub_pad               <= V_shifted_pad;
-                        state                   <= CALC;
-                    end else if (cmp_idx == 6'd0) begin
-                        is_greater_or_equal_reg <= 1'b1;
-                        state                   <= SUB_INIT;
+                CMP_UPDATE: begin
+                    if (!cmp_decided) begin
+                        if (work_read > n_read) begin
+                            cmp_ge      <= 1'b1;
+                            cmp_decided <= 1'b1;
+                        end else if (work_read < n_read) begin
+                            cmp_ge      <= 1'b0;
+                            cmp_decided <= 1'b1;
+                        end
+                    end
+
+                    if (word_idx == 6'd0) begin
+                        if (!cmp_decided) begin
+                            cmp_ge <= (work_read >= n_read);
+                        end
+
+                        if ((!cmp_decided && (work_read >= n_read)) || (cmp_decided && cmp_ge)) begin
+                            word_idx <= 6'd0;
+                            borrow   <= 1'b0;
+                            state    <= SUB_READ;
+                        end else begin
+                            count <= count + 1'b1;
+                            state <= SHIFT;
+                        end
                     end else begin
-                        cmp_idx <= cmp_idx - 6'd1;
+                        word_idx <= word_idx - 1'b1;
+                        state    <= CMP_READ;
                     end
                 end
 
-                SUB_INIT: begin
-                    chunk_idx  <= 6'd0;
-                    sub_borrow <= 1'b0;
-                    state      <= SUB;
+                SUB_READ: begin
+                    work_read <= work_words[word_idx];
+                    n_read    <= n_words[word_idx];
+                    state     <= SUB_WRITE;
                 end
 
-                SUB: begin
-                    V_sub_pad[chunk_idx * 32 +: 32] <= sub_diff[31:0];
-                    sub_borrow <= sub_diff[32];
-                    if (chunk_idx == LAST_CHUNK) begin
-                        state <= CALC;
+                SUB_WRITE: begin
+                    work_words[word_idx] <= sub_word[31:0];
+                    borrow <= sub_word[32];
+
+                    if (word_idx == 6'd32) begin
+                        count <= count + 1'b1;
+                        state <= SHIFT;
                     end else begin
-                        chunk_idx <= chunk_idx + 6'd1;
+                        word_idx <= word_idx + 1'b1;
+                        state    <= SUB_READ;
                     end
                 end
 
-                CALC: begin
-                    V     <= V_sub_pad[1024:0];
-                    count <= count + 1'b1;
-                    state <= PREP;
-                end
-
-                DONE: begin
-                    r2_mod_n <= V[1023:0];
-                    done     <= 1'b1;
-                    state    <= IDLE;
+                FINISH: begin
+                    done  <= 1'b1;
+                    state <= IDLE;
                 end
 
                 default: state <= IDLE;

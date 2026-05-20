@@ -19,36 +19,44 @@ module RSA_Top (
 
     // --- Dinh nghia cac trang thai FSM mo rong de quan ly Wrapper ---
     localparam STATE_IDLE        = 5'd0,
-               STATE_READ_P      = 5'd1,
-               STATE_READ_Q      = 5'd2,
-               STATE_START_N     = 5'd3,
-               STATE_WAIT_N      = 5'd4,
-               STATE_START_PHI   = 5'd5,
-               STATE_WAIT_PHI    = 5'd6,
-               STATE_START_KEYS  = 5'd7,
-               STATE_WAIT_KEYS   = 5'd10,
-               STATE_START_PAD   = 5'd8,  // Trang thai kich hoat chen dem padding
-               STATE_WAIT_PAD    = 5'd9,  // Trang thai doi chen dem padding xong
-               STATE_START_EXP   = 5'd11,
-               STATE_WAIT_EXP    = 5'd12,
-               STATE_START_UNPAD = 5'd14, // Trang thai kich hoat boc go padding
-               STATE_WAIT_UNPAD  = 5'd15, // Trang thai doi boc go padding xong
-               STATE_DEC_P_INIT  = 5'd16,
-               STATE_DEC_P_CHUNK = 5'd17,
-               STATE_DEC_Q_INIT  = 5'd18,
-               STATE_DEC_Q_CHUNK = 5'd19,
-               STATE_DONE        = 5'd13;
+               STATE_WAIT_P_RAM  = 5'd1,
+               STATE_READ_P      = 5'd2,
+               STATE_WAIT_Q_RAM  = 5'd3,
+               STATE_READ_Q      = 5'd4,
+               STATE_START_N     = 5'd5,
+               STATE_WAIT_N      = 5'd6,
+               STATE_DEC_P       = 5'd7,
+               STATE_DEC_Q       = 5'd8,
+               STATE_START_PHI   = 5'd9,
+               STATE_WAIT_PHI    = 5'd10,
+               STATE_START_KEYS  = 5'd11,
+               STATE_WAIT_KEYS   = 5'd12,
+               STATE_START_PAD   = 5'd13, // Trang thai kich hoat chen dem padding
+               STATE_WAIT_PAD    = 5'd14, // Trang thai doi chen dem padding xong
+               STATE_START_EXP   = 5'd15,
+               STATE_WAIT_EXP    = 5'd16,
+               STATE_START_UNPAD = 5'd17, // Trang thai kich hoat boc go padding
+               STATE_WAIT_UNPAD  = 5'd18, // Trang thai doi boc go padding xong
+               STATE_DONE        = 5'd19;
 
     reg [4:0] current_state;
 
     // --- Thanh ghi luu tru tham so noi bo ---
     reg [511:0]  p_val, q_val;
+    reg [511:0]  p_minus_one, q_minus_one;
     reg [1023:0] N_reg;
     reg [1023:0] phi_reg;
     reg [1023:0] d_reg;
     reg [1023:0] r2_reg;
     reg [1023:0] pad_out_reg;
     reg          r2_ready, keygen_ready;
+    reg [4:0]    dec_word_idx;
+    reg          dec_borrow;
+
+    wire [31:0] dec_source_word = (current_state == STATE_DEC_Q) ?
+                                  q_val[dec_word_idx * 32 +: 32] :
+                                  p_val[dec_word_idx * 32 +: 32];
+    wire [32:0] dec_sub_result  = {1'b0, dec_source_word} - {32'd0, dec_borrow};
 
     // --- Tinh toan dia chi tu prime_addr doc lap ---
     wire [6:0] addr_p = prime_addr; 
@@ -67,14 +75,18 @@ module RSA_Top (
     reg  [511:0] mult_p, mult_q;
     wire [1023:0] mult_n;
     wire          mult_done;
-    reg  [3:0]    dec_chunk_idx;
-    reg           dec_borrow;
 
-    wire [32:0] dec_p_diff = {1'b0, mult_p[dec_chunk_idx * 32 +: 32]} - dec_borrow;
-    wire [32:0] dec_q_diff = {1'b0, mult_q[dec_chunk_idx * 32 +: 32]} - dec_borrow;
-
-    rsa_512x512_multiplier u_multiplier (
-        .clk(clk), .rst_n(rst_n), .start(mult_start), .p(mult_p), .q(mult_q), .n(mult_n), .done(mult_done)
+    serial_multiplier #(
+        .WIDTH(512),
+        .CHUNK_WIDTH(32)
+    ) u_multiplier (
+        .clk(clk),
+        .rst_n(rst_n),
+        .start(mult_start),
+        .multiplicand_in(mult_p),
+        .multiplier_in(mult_q),
+        .product_out(mult_n),
+        .done(mult_done)
     );
 
     // --- Ket noi Module Fast_R2_Mod_N ---
@@ -133,6 +145,8 @@ module RSA_Top (
             current_state   <= STATE_IDLE;
             p_val           <= 512'd0;
             q_val           <= 512'd0;
+            p_minus_one     <= 512'd0;
+            q_minus_one     <= 512'd0;
             N_reg           <= 1024'd0;
             phi_reg         <= 1024'd0;
             d_reg           <= 1024'd0;
@@ -141,8 +155,6 @@ module RSA_Top (
             mult_start      <= 1'b0;
             mult_p          <= 512'd0;
             mult_q          <= 512'd0;
-            dec_chunk_idx   <= 4'd0;
-            dec_borrow      <= 1'b0;
             r2_start        <= 1'b0;
             keygen_start    <= 1'b0;
             modexp_start    <= 1'b0;
@@ -150,6 +162,8 @@ module RSA_Top (
             modexp_exp      <= 1024'd0;
             r2_ready        <= 1'b0;
             keygen_ready    <= 1'b0;
+            dec_word_idx    <= 5'd0;
+            dec_borrow      <= 1'b0;
             wrapper_start   <= 1'b0;
             ciphertext_out  <= 1024'd0;
             plaintext_out   <= 936'd0;
@@ -164,13 +178,21 @@ module RSA_Top (
                     error <= 1'b0;
                     if (start) begin
                         ram_addr      <= addr_p;
-                        current_state <= STATE_READ_P;
+                        current_state <= STATE_WAIT_P_RAM;
                     end
+                end
+
+                STATE_WAIT_P_RAM: begin
+                    current_state <= STATE_READ_P;
                 end
 
                 STATE_READ_P: begin
                     p_val         <= ram_data_out;
                     ram_addr      <= addr_q;
+                    current_state <= STATE_WAIT_Q_RAM;
+                end
+
+                STATE_WAIT_Q_RAM: begin
                     current_state <= STATE_READ_Q;
                 end
 
@@ -190,45 +212,39 @@ module RSA_Top (
                     mult_start <= 1'b0;
                     if (mult_done) begin
                         N_reg         <= mult_n;
-                        current_state <= STATE_DEC_P_INIT;
+                        dec_word_idx  <= 5'd0;
+                        dec_borrow    <= 1'b1;
+                        current_state <= STATE_DEC_P;
                     end
                 end
 
-                STATE_DEC_P_INIT: begin
-                    mult_p        <= p_val;
-                    dec_chunk_idx <= 4'd0;
-                    dec_borrow    <= 1'b1;
-                    current_state <= STATE_DEC_P_CHUNK;
-                end
-
-                STATE_DEC_P_CHUNK: begin
-                    mult_p[dec_chunk_idx * 32 +: 32] <= dec_p_diff[31:0];
-                    dec_borrow <= dec_p_diff[32];
-                    if (dec_chunk_idx == 4'd15) begin
-                        current_state <= STATE_DEC_Q_INIT;
+                STATE_DEC_P: begin
+                    p_minus_one[dec_word_idx * 32 +: 32] <= dec_sub_result[31:0];
+                    if (dec_word_idx == 5'd15) begin
+                        dec_word_idx  <= 5'd0;
+                        dec_borrow    <= 1'b1;
+                        current_state <= STATE_DEC_Q;
                     end else begin
-                        dec_chunk_idx <= dec_chunk_idx + 4'd1;
+                        dec_word_idx  <= dec_word_idx + 5'd1;
+                        dec_borrow    <= dec_sub_result[32];
                     end
                 end
 
-                STATE_DEC_Q_INIT: begin
-                    mult_q        <= q_val;
-                    dec_chunk_idx <= 4'd0;
-                    dec_borrow    <= 1'b1;
-                    current_state <= STATE_DEC_Q_CHUNK;
-                end
-
-                STATE_DEC_Q_CHUNK: begin
-                    mult_q[dec_chunk_idx * 32 +: 32] <= dec_q_diff[31:0];
-                    dec_borrow <= dec_q_diff[32];
-                    if (dec_chunk_idx == 4'd15) begin
+                STATE_DEC_Q: begin
+                    q_minus_one[dec_word_idx * 32 +: 32] <= dec_sub_result[31:0];
+                    if (dec_word_idx == 5'd15) begin
+                        dec_word_idx  <= 5'd0;
+                        dec_borrow    <= 1'b0;
                         current_state <= STATE_START_PHI;
                     end else begin
-                        dec_chunk_idx <= dec_chunk_idx + 4'd1;
+                        dec_word_idx  <= dec_word_idx + 5'd1;
+                        dec_borrow    <= dec_sub_result[32];
                     end
                 end
 
                 STATE_START_PHI: begin
+                    mult_p        <= p_minus_one;
+                    mult_q        <= q_minus_one;
                     mult_start    <= 1'b1;
                     current_state <= STATE_WAIT_PHI;
                 end

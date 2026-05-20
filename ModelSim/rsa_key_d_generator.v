@@ -15,16 +15,15 @@ module rsa_key_d_generator (
     localparam CALC_MOD      = 4'd1;  
     localparam CALC_INV      = 4'd2;
     localparam WAIT_INV_DIV  = 4'd3;
-    localparam CALC_MULT     = 4'd4;
-    localparam START_D_DIV   = 4'd5;
-    localparam WAIT_D_DIV    = 4'd6;
-    localparam STATE_DONE    = 4'd7;
-    localparam MULT_ADD_LO   = 4'd8;
-    localparam MULT_ADD_HI   = 4'd9;
-    localparam MULT_SHIFT    = 4'd10;
+    localparam PREP_D_CALC   = 4'd4;
+    localparam GEN_LOAD      = 4'd5;
+    localparam GEN_PRODUCT   = 4'd6;
+    localparam DIVIDE_D      = 4'd7;
+    localparam STATE_DONE    = 4'd8;
 
     reg [3:0] state;                // Thanh ghi luu tru trang thai FSM
     reg [1023:0] phi_reg;           // Thanh ghi luu gia tri phi dau vao
+    reg [1023:0] phi_mod_shift;
 
     reg [10:0] bit_cnt;             // Bo dem quet dich bit tu 1023 lui ve 0
     reg [17:0] rem;                 // Thanh ghi so du tam thoi
@@ -36,30 +35,20 @@ module rsa_key_d_generator (
     reg signed [31:0] new_r;        // Thanh ghi so du r moi cap nhat tung chu ky
     reg [5:0]         inv_cnt;      // Bo dem khong che so vong lap toi da 40 chu ky
 
-    reg [1040:0]      d_numerator;  // Thanh ghi dem luu tu so cua bieu thuc tinh d
-    reg [1151:0]      mult_accum;
-    reg [1151:0]      mult_phi_shift;
-    reg [16:0]        mult_k;
-    reg [4:0]         mult_cnt;
-    reg [5:0]         mult_chunk_idx;
-    reg               mult_carry;
-
-    wire [32:0]       mult_chunk_sum =
-        {1'b0, mult_accum[mult_chunk_idx * 32 +: 32]} +
-        {1'b0, mult_phi_shift[mult_chunk_idx * 32 +: 32]} +
-        mult_carry;
+    reg [16:0]        key_k;        // He so k thoa man (k * phi + 1) chia het cho e
+    reg [1040:0]      numerator_shift_reg;
+    reg [1023:0]      phi_shift_reg;
+    reg [16:0]        phi_window;
+    reg [10:0]        prod_idx;
+    reg [10:0]        div_idx;
+    reg [5:0]         prod_carry;
+    reg [17:0]        div_rem;
 
     reg inv_div_start;
     wire [31:0] inv_div_quotient;
     wire [31:0] inv_div_remainder;
     wire        inv_div_done;
     wire        inv_div_by_zero;
-
-    reg d_div_start;
-    wire [1040:0] d_div_quotient;
-    wire [1040:0] d_div_remainder;
-    wire          d_div_done;
-    wire          d_div_by_zero;
 
     seq_div_unsigned #(
         .WIDTH(32),
@@ -76,23 +65,8 @@ module rsa_key_d_generator (
         .divide_by_zero(inv_div_by_zero)
     );
 
-    seq_div_unsigned #(
-        .WIDTH(1041),
-        .COUNT_WIDTH(11)
-    ) u_d_divider (
-        .clk(clk),
-        .rst_n(rst_n),
-        .start(d_div_start),
-        .dividend(d_numerator),
-        .divisor(1041'd65537),
-        .quotient(d_div_quotient),
-        .remainder(d_div_remainder),
-        .done(d_div_done),
-        .divide_by_zero(d_div_by_zero)
-    );
-
     always @(*) begin
-        rem_comp = {rem[16:0], phi_reg[bit_cnt]};
+        rem_comp = {rem[16:0], phi_mod_shift[1023]};
         if (rem_comp >= 18'd65537) begin
             rem_comp = rem_comp - 18'd65537;
         end
@@ -101,11 +75,31 @@ module rsa_key_d_generator (
     wire signed [31:0] comb_final_t       = (t < 32'sd0) ? (t + 32'sd65537) : t;
     wire [16:0]        comb_phi_mod_e_inv = comb_final_t[16:0];
     wire [16:0]        comb_key_k         = (comb_phi_mod_e_inv == 17'd0) ? 17'd0 : (17'd65537 - comb_phi_mod_e_inv);
+    wire               current_phi_bit    = (prod_idx < 11'd1024) ? phi_shift_reg[0] : 1'b0;
+    wire [5:0]         prod_sum           = prod_carry + window_sum(phi_window, key_k);
+    wire [17:0]        div_shifted        = {div_rem[16:0], numerator_shift_reg[1040]};
+    wire               div_can_subtract   = (div_shifted >= 18'd65537);
+    wire [17:0]        div_next_rem       = div_can_subtract ? (div_shifted - 18'd65537) : div_shifted;
+
+    function [5:0] window_sum;
+        input [16:0] phi_bits;
+        input [16:0] key_bits;
+        integer i;
+        begin
+            window_sum = 6'd0;
+            for (i = 0; i < 17; i = i + 1) begin
+                if (key_bits[i] && phi_bits[i]) begin
+                    window_sum = window_sum + 1'b1;
+                end
+            end
+        end
+    endfunction
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state        <= IDLE;
             phi_reg      <= 1024'd0;
+            phi_mod_shift <= 1024'd0;
             private_d    <= 1024'd0;
             done         <= 1'b0;
             phi_invalid  <= 1'b0;
@@ -116,24 +110,24 @@ module rsa_key_d_generator (
             r            <= 32'sd0;
             new_r        <= 32'sd0;
             inv_cnt      <= 6'd0;
-            d_numerator  <= 1041'd0;
-            mult_accum   <= 1152'd0;
-            mult_phi_shift <= 1152'd0;
-            mult_k       <= 17'd0;
-            mult_cnt     <= 5'd0;
-            mult_chunk_idx <= 6'd0;
-            mult_carry   <= 1'b0;
             inv_div_start <= 1'b0;
-            d_div_start   <= 1'b0;
+            key_k        <= 17'd0;
+            numerator_shift_reg <= 1041'd0;
+            phi_shift_reg <= 1024'd0;
+            phi_window    <= 17'd0;
+            prod_idx     <= 11'd0;
+            div_idx      <= 11'd0;
+            prod_carry   <= 6'd0;
+            div_rem      <= 18'd0;
         end else begin
             inv_div_start <= 1'b0;
-            d_div_start   <= 1'b0;
 
             case (state)
                 IDLE: begin
                     done <= 1'b0;
                     if (start) begin
                         phi_reg     <= phi;
+                        phi_mod_shift <= phi;
                         rem         <= 18'd0;
                         bit_cnt     <= 11'd1023; 
                         phi_invalid <= 1'b0;
@@ -157,6 +151,7 @@ module rsa_key_d_generator (
                             state   <= CALC_INV;
                         end
                     end else begin
+                        phi_mod_shift <= phi_mod_shift << 1;
                         bit_cnt <= bit_cnt - 1'b1; 
                     end
                 end
@@ -171,7 +166,7 @@ module rsa_key_d_generator (
                             private_d   <= 1024'd0;
                             state       <= STATE_DONE;
                         end else begin
-                            state       <= CALC_MULT; 
+                            state       <= PREP_D_CALC; 
                         end
                     end
                 end
@@ -187,53 +182,50 @@ module rsa_key_d_generator (
                     end
                 end
 
-                CALC_MULT: begin
-                    mult_accum     <= 1152'd1;
-                    mult_phi_shift <= {111'd0, 17'd0, phi_reg};
-                    mult_k         <= comb_key_k;
-                    mult_cnt       <= 5'd0;
-                    state          <= MULT_ADD_LO;
+                PREP_D_CALC: begin
+                    key_k          <= comb_key_k;
+                    numerator_shift_reg <= 1041'd0;
+                    phi_shift_reg  <= phi_reg;
+                    phi_window     <= 17'd0;
+                    prod_idx       <= 11'd0;
+                    prod_carry     <= 6'd1;
+                    state          <= GEN_LOAD;
                 end
 
-                MULT_ADD_LO: begin
-                    if (mult_cnt == 5'd17) begin
-                        d_numerator <= mult_accum[1040:0];
-                        state       <= START_D_DIV;
-                    end else if (mult_k[0]) begin
-                        mult_chunk_idx <= 6'd0;
-                        mult_carry     <= 1'b0;
-                        state          <= MULT_ADD_HI;
+                GEN_LOAD: begin
+                    phi_window <= {phi_window[15:0], current_phi_bit};
+                    if (prod_idx < 11'd1024) begin
+                        phi_shift_reg <= phi_shift_reg >> 1;
+                    end
+                    state <= GEN_PRODUCT;
+                end
+
+                GEN_PRODUCT: begin
+                    numerator_shift_reg <= {prod_sum[0], numerator_shift_reg[1040:1]};
+                    prod_carry <= {1'b0, prod_sum[5:1]};
+
+                    if (prod_idx == 11'd1040) begin
+                        private_d <= 1024'd0;
+                        div_rem   <= 18'd0;
+                        div_idx   <= 11'd1040;
+                        state     <= DIVIDE_D;
                     end else begin
-                        state <= MULT_SHIFT;
+                        prod_idx <= prod_idx + 1'b1;
+                        state    <= GEN_LOAD;
                     end
                 end
 
-                MULT_ADD_HI: begin
-                    mult_accum[mult_chunk_idx * 32 +: 32] <= mult_chunk_sum[31:0];
-                    mult_carry <= mult_chunk_sum[32];
-                    if (mult_chunk_idx == 6'd35) begin
-                        state <= MULT_SHIFT;
-                    end else begin
-                        mult_chunk_idx <= mult_chunk_idx + 6'd1;
+                DIVIDE_D: begin
+                    div_rem <= div_next_rem;
+                    numerator_shift_reg <= {numerator_shift_reg[1039:0], 1'b0};
+                    if (div_idx <= 11'd1023) begin
+                        private_d <= {private_d[1022:0], div_can_subtract};
                     end
-                end
 
-                MULT_SHIFT: begin
-                    mult_phi_shift <= mult_phi_shift << 1;
-                    mult_k         <= mult_k >> 1;
-                    mult_cnt       <= mult_cnt + 5'd1;
-                    state          <= MULT_ADD_LO;
-                end
-
-                START_D_DIV: begin
-                    d_div_start <= 1'b1;
-                    state       <= WAIT_D_DIV;
-                end
-
-                WAIT_D_DIV: begin
-                    if (d_div_done) begin
-                        private_d <= d_div_quotient[1023:0];
+                    if (div_idx == 11'd0) begin
                         state     <= STATE_DONE;
+                    end else begin
+                        div_idx <= div_idx - 1'b1;
                     end
                 end
 
