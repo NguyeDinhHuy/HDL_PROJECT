@@ -46,7 +46,7 @@ module tb_RSA_top;
         plaintext_in  = 936'd0;
         ciphertext_in = 1024'd0;
         prime_addr    = 7'd48; 
-        tb_plaintext  = 936'd23520633; 
+        tb_plaintext  = 936'd235206339; 
 
         #100;
         rst_n = 1'b1; 

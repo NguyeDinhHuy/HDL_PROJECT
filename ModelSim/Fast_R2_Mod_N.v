@@ -11,20 +11,25 @@ module Fast_R2_Mod_N (
     localparam CHUNK_WIDTH = 32;
     localparam CHUNK_COUNT = 33; // 1025 bit, padded to 33 x 32-bit words
 
-    localparam IDLE       = 3'd0;
-    localparam SHIFT      = 3'd1;
-    localparam CMP_READ   = 3'd2;
-    localparam CMP_UPDATE = 3'd3;
-    localparam SUB_READ   = 3'd4;
-    localparam SUB_WRITE  = 3'd5;
-    localparam FINISH     = 3'd6;
+    localparam IDLE        = 4'd0;
+    localparam INIT_WORK   = 4'd1;
+    localparam LOAD_N      = 4'd2;
+    localparam SHIFT       = 4'd3;
+    localparam SHIFT_WRITE = 4'd4;
+    localparam CMP_READ    = 4'd5;
+    localparam CMP_UPDATE  = 4'd6;
+    localparam SUB_READ    = 4'd7;
+    localparam SUB_WRITE   = 4'd8;
+    localparam PACK        = 4'd9;
+    localparam FINISH      = 4'd10;
 
-    reg [2:0]  state;
+    reg [3:0]  state;
     reg [11:0] count;
     reg [5:0]  word_idx;
     reg        cmp_decided;
     reg        cmp_ge;
     reg        borrow;
+    reg        shift_carry;
     reg [31:0] work_read;
     reg [31:0] n_read;
 
@@ -32,8 +37,6 @@ module Fast_R2_Mod_N (
     reg [CHUNK_WIDTH-1:0] n_words    [0:CHUNK_COUNT-1];
 
     wire [32:0] sub_word = {1'b0, work_read} - {1'b0, n_read} - borrow;
-
-    integer i;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -43,15 +46,11 @@ module Fast_R2_Mod_N (
             cmp_decided <= 1'b0;
             cmp_ge      <= 1'b0;
             borrow      <= 1'b0;
+            shift_carry <= 1'b0;
             work_read   <= 32'd0;
             n_read      <= 32'd0;
             r2_mod_n    <= 1024'd0;
             done        <= 1'b0;
-
-            for (i = 0; i < CHUNK_COUNT; i = i + 1) begin
-                work_words[i] <= 32'd0;
-                n_words[i]    <= 32'd0;
-            end
         end else begin
             case (state)
                 IDLE: begin
@@ -62,38 +61,57 @@ module Fast_R2_Mod_N (
                         cmp_decided <= 1'b0;
                         cmp_ge      <= 1'b0;
                         borrow      <= 1'b0;
+                        shift_carry <= 1'b0;
                         r2_mod_n    <= 1024'd0;
+                        state       <= INIT_WORK;
+                    end
+                end
 
-                        work_words[0] <= 32'd1;
-                        for (i = 1; i < CHUNK_COUNT; i = i + 1) begin
-                            work_words[i] <= 32'd0;
-                        end
+                INIT_WORK: begin
+                    work_words[word_idx] <= (word_idx == 6'd0) ? 32'd1 : 32'd0;
 
-                        for (i = 0; i < 32; i = i + 1) begin
-                            n_words[i] <= n[i * CHUNK_WIDTH +: CHUNK_WIDTH];
-                        end
-                        n_words[32] <= 32'd0;
+                    if (word_idx == 6'd32) begin
+                        word_idx <= 6'd0;
+                        state    <= LOAD_N;
+                    end else begin
+                        word_idx <= word_idx + 1'b1;
+                    end
+                end
 
-                        state <= SHIFT;
+                LOAD_N: begin
+                    if (word_idx == 6'd32) begin
+                        n_words[word_idx] <= 32'd0;
+                        word_idx          <= 6'd0;
+                        state             <= SHIFT;
+                    end else begin
+                        n_words[word_idx] <= n[word_idx * CHUNK_WIDTH +: CHUNK_WIDTH];
+                        word_idx          <= word_idx + 1'b1;
                     end
                 end
 
                 SHIFT: begin
                     if (count == 12'd2048) begin
-                        for (i = 0; i < 32; i = i + 1) begin
-                            r2_mod_n[i * CHUNK_WIDTH +: CHUNK_WIDTH] <= work_words[i];
-                        end
-                        state <= FINISH;
+                        word_idx <= 6'd0;
+                        state    <= PACK;
                     end else begin
-                        work_words[0] <= {work_words[0][30:0], 1'b0};
-                        for (i = 1; i < CHUNK_COUNT; i = i + 1) begin
-                            work_words[i] <= {work_words[i][30:0], work_words[i-1][31]};
-                        end
+                        word_idx    <= 6'd0;
+                        shift_carry <= 1'b0;
+                        state       <= SHIFT_WRITE;
+                    end
+                end
 
+                SHIFT_WRITE: begin
+                    work_read <= work_words[word_idx];
+                    work_words[word_idx] <= {work_words[word_idx][30:0], shift_carry};
+                    shift_carry <= work_words[word_idx][31];
+
+                    if (word_idx == 6'd32) begin
                         word_idx    <= 6'd32;
                         cmp_decided <= 1'b0;
                         cmp_ge      <= 1'b1;
                         state       <= CMP_READ;
+                    end else begin
+                        word_idx <= word_idx + 1'b1;
                     end
                 end
 
@@ -149,6 +167,16 @@ module Fast_R2_Mod_N (
                     end else begin
                         word_idx <= word_idx + 1'b1;
                         state    <= SUB_READ;
+                    end
+                end
+
+                PACK: begin
+                    r2_mod_n[word_idx * CHUNK_WIDTH +: CHUNK_WIDTH] <= work_words[word_idx];
+
+                    if (word_idx == 6'd31) begin
+                        state <= FINISH;
+                    end else begin
+                        word_idx <= word_idx + 1'b1;
                     end
                 end
 

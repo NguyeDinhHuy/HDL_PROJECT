@@ -14,37 +14,46 @@ module serial_multiplier #(
     output reg                      done
 );
 
-    function integer clog2;
-        input integer value;
-        integer tmp;
-        begin
-            tmp = value - 1;
-            for (clog2 = 0; tmp > 0; clog2 = clog2 + 1) begin
-                tmp = tmp >> 1;
-            end
-        end
-    endfunction
-
     localparam PRODUCT_WIDTH   = 2 * WIDTH;
     localparam CHUNK_COUNT     = PRODUCT_WIDTH / CHUNK_WIDTH;
     localparam INPUT_CHUNKS    = WIDTH / CHUNK_WIDTH;
-    localparam COUNT_WIDTH     = clog2(WIDTH + 1);
-    localparam CHUNK_IDX_WIDTH = clog2(CHUNK_COUNT);
+    localparam COUNT_WIDTH     = (WIDTH <= 1)    ? 1  :
+                                 (WIDTH <= 3)    ? 2  :
+                                 (WIDTH <= 7)    ? 3  :
+                                 (WIDTH <= 15)   ? 4  :
+                                 (WIDTH <= 31)   ? 5  :
+                                 (WIDTH <= 63)   ? 6  :
+                                 (WIDTH <= 127)  ? 7  :
+                                 (WIDTH <= 255)  ? 8  :
+                                 (WIDTH <= 511)  ? 9  :
+                                 (WIDTH <= 1023) ? 10 :
+                                 (WIDTH <= 2047) ? 11 : 12;
+    localparam CHUNK_IDX_WIDTH = (CHUNK_COUNT <= 2)   ? 1  :
+                                 (CHUNK_COUNT <= 4)   ? 2  :
+                                 (CHUNK_COUNT <= 8)   ? 3  :
+                                 (CHUNK_COUNT <= 16)  ? 4  :
+                                 (CHUNK_COUNT <= 32)  ? 5  :
+                                 (CHUNK_COUNT <= 64)  ? 6  :
+                                 (CHUNK_COUNT <= 128) ? 7  :
+                                 (CHUNK_COUNT <= 256) ? 8  : 9;
     localparam [COUNT_WIDTH-1:0]     LAST_BIT_COUNT = WIDTH;
     localparam [CHUNK_IDX_WIDTH-1:0] LAST_CHUNK_IDX = CHUNK_COUNT - 1;
 
-    localparam IDLE      = 3'd0;
-    localparam CHECK     = 3'd1;
-    localparam ADD_READ  = 3'd2;
-    localparam ADD_WRITE = 3'd3;
-    localparam SHIFT     = 3'd4;
-    localparam PACK      = 3'd5;
-    localparam DONE      = 3'd6;
+    localparam IDLE        = 4'd0;
+    localparam INIT_WORDS  = 4'd1;
+    localparam CHECK       = 4'd2;
+    localparam ADD_READ    = 4'd3;
+    localparam ADD_WRITE   = 4'd4;
+    localparam SHIFT       = 4'd5;
+    localparam SHIFT_WRITE = 4'd6;
+    localparam PACK        = 4'd7;
+    localparam DONE        = 4'd8;
 
-    reg [2:0]                         state;
+    reg [3:0]                         state;
     reg [COUNT_WIDTH-1:0]             bit_count;
     reg [WIDTH-1:0]                   multiplier_reg;
     reg                               add_carry;
+    reg                               shift_carry;
     reg [CHUNK_IDX_WIDTH-1:0]         chunk_idx;
     reg [CHUNK_WIDTH-1:0]             product_read;
     reg [CHUNK_WIDTH-1:0]             multiplicand_read;
@@ -55,24 +64,18 @@ module serial_multiplier #(
     wire [CHUNK_WIDTH:0] chunk_sum =
         {1'b0, product_read} + {1'b0, multiplicand_read} + add_carry;
 
-    integer i;
-
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state             <= IDLE;
             bit_count         <= {COUNT_WIDTH{1'b0}};
             multiplier_reg    <= {WIDTH{1'b0}};
             add_carry         <= 1'b0;
+            shift_carry       <= 1'b0;
             chunk_idx         <= {CHUNK_IDX_WIDTH{1'b0}};
             product_read      <= {CHUNK_WIDTH{1'b0}};
             multiplicand_read <= {CHUNK_WIDTH{1'b0}};
             product_out       <= {PRODUCT_WIDTH{1'b0}};
             done              <= 1'b0;
-
-            for (i = 0; i < CHUNK_COUNT; i = i + 1) begin
-                product_words[i]      <= {CHUNK_WIDTH{1'b0}};
-                multiplicand_words[i] <= {CHUNK_WIDTH{1'b0}};
-            end
         end else begin
             case (state)
                 IDLE: begin
@@ -81,19 +84,26 @@ module serial_multiplier #(
                         bit_count      <= {COUNT_WIDTH{1'b0}};
                         multiplier_reg <= multiplier_in;
                         add_carry      <= 1'b0;
+                        shift_carry    <= 1'b0;
                         chunk_idx      <= {CHUNK_IDX_WIDTH{1'b0}};
                         product_out    <= {PRODUCT_WIDTH{1'b0}};
+                        state          <= INIT_WORDS;
+                    end
+                end
 
-                        for (i = 0; i < CHUNK_COUNT; i = i + 1) begin
-                            product_words[i] <= {CHUNK_WIDTH{1'b0}};
-                            if (i < INPUT_CHUNKS) begin
-                                multiplicand_words[i] <= multiplicand_in[i * CHUNK_WIDTH +: CHUNK_WIDTH];
-                            end else begin
-                                multiplicand_words[i] <= {CHUNK_WIDTH{1'b0}};
-                            end
-                        end
+                INIT_WORDS: begin
+                    product_words[chunk_idx] <= {CHUNK_WIDTH{1'b0}};
+                    if (chunk_idx < INPUT_CHUNKS) begin
+                        multiplicand_words[chunk_idx] <= multiplicand_in[chunk_idx * CHUNK_WIDTH +: CHUNK_WIDTH];
+                    end else begin
+                        multiplicand_words[chunk_idx] <= {CHUNK_WIDTH{1'b0}};
+                    end
 
-                        state <= CHECK;
+                    if (chunk_idx == LAST_CHUNK_IDX) begin
+                        chunk_idx <= {CHUNK_IDX_WIDTH{1'b0}};
+                        state     <= CHECK;
+                    end else begin
+                        chunk_idx <= chunk_idx + 1'b1;
                     end
                 end
 
@@ -129,17 +139,25 @@ module serial_multiplier #(
                 end
 
                 SHIFT: begin
-                    multiplicand_words[0] <= {multiplicand_words[0][CHUNK_WIDTH-2:0], 1'b0};
-                    for (i = 1; i < CHUNK_COUNT; i = i + 1) begin
-                        multiplicand_words[i] <= {
-                            multiplicand_words[i][CHUNK_WIDTH-2:0],
-                            multiplicand_words[i-1][CHUNK_WIDTH-1]
-                        };
-                    end
+                    chunk_idx   <= {CHUNK_IDX_WIDTH{1'b0}};
+                    shift_carry <= 1'b0;
+                    state       <= SHIFT_WRITE;
+                end
 
-                    multiplier_reg <= multiplier_reg >> 1;
-                    bit_count      <= bit_count + 1'b1;
-                    state          <= CHECK;
+                SHIFT_WRITE: begin
+                    multiplicand_words[chunk_idx] <= {
+                        multiplicand_words[chunk_idx][CHUNK_WIDTH-2:0],
+                        shift_carry
+                    };
+                    shift_carry <= multiplicand_words[chunk_idx][CHUNK_WIDTH-1];
+
+                    if (chunk_idx == LAST_CHUNK_IDX) begin
+                        multiplier_reg <= multiplier_reg >> 1;
+                        bit_count      <= bit_count + 1'b1;
+                        state          <= CHECK;
+                    end else begin
+                        chunk_idx <= chunk_idx + 1'b1;
+                    end
                 end
 
                 PACK: begin

@@ -76,24 +76,28 @@ module rsa_key_d_generator (
     wire [16:0]        comb_phi_mod_e_inv = comb_final_t[16:0];
     wire [16:0]        comb_key_k         = (comb_phi_mod_e_inv == 17'd0) ? 17'd0 : (17'd65537 - comb_phi_mod_e_inv);
     wire               current_phi_bit    = (prod_idx < 11'd1024) ? phi_shift_reg[0] : 1'b0;
-    wire [5:0]         prod_sum           = prod_carry + window_sum(phi_window, key_k);
+    wire [5:0]         window_sum_value   =
+        ((key_k[0]  && phi_window[0])  ? 6'd1 : 6'd0) +
+        ((key_k[1]  && phi_window[1])  ? 6'd1 : 6'd0) +
+        ((key_k[2]  && phi_window[2])  ? 6'd1 : 6'd0) +
+        ((key_k[3]  && phi_window[3])  ? 6'd1 : 6'd0) +
+        ((key_k[4]  && phi_window[4])  ? 6'd1 : 6'd0) +
+        ((key_k[5]  && phi_window[5])  ? 6'd1 : 6'd0) +
+        ((key_k[6]  && phi_window[6])  ? 6'd1 : 6'd0) +
+        ((key_k[7]  && phi_window[7])  ? 6'd1 : 6'd0) +
+        ((key_k[8]  && phi_window[8])  ? 6'd1 : 6'd0) +
+        ((key_k[9]  && phi_window[9])  ? 6'd1 : 6'd0) +
+        ((key_k[10] && phi_window[10]) ? 6'd1 : 6'd0) +
+        ((key_k[11] && phi_window[11]) ? 6'd1 : 6'd0) +
+        ((key_k[12] && phi_window[12]) ? 6'd1 : 6'd0) +
+        ((key_k[13] && phi_window[13]) ? 6'd1 : 6'd0) +
+        ((key_k[14] && phi_window[14]) ? 6'd1 : 6'd0) +
+        ((key_k[15] && phi_window[15]) ? 6'd1 : 6'd0) +
+        ((key_k[16] && phi_window[16]) ? 6'd1 : 6'd0);
+    wire [5:0]         prod_sum           = prod_carry + window_sum_value;
     wire [17:0]        div_shifted        = {div_rem[16:0], numerator_shift_reg[1040]};
     wire               div_can_subtract   = (div_shifted >= 18'd65537);
     wire [17:0]        div_next_rem       = div_can_subtract ? (div_shifted - 18'd65537) : div_shifted;
-
-    function [5:0] window_sum;
-        input [16:0] phi_bits;
-        input [16:0] key_bits;
-        integer i;
-        begin
-            window_sum = 6'd0;
-            for (i = 0; i < 17; i = i + 1) begin
-                if (key_bits[i] && phi_bits[i]) begin
-                    window_sum = window_sum + 1'b1;
-                end
-            end
-        end
-    endfunction
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
