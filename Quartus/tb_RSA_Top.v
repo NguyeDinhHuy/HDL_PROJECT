@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module tb_RSA_top;
+module tb_RSA_Top;
 
     reg          clk;
     reg          rst_n;
