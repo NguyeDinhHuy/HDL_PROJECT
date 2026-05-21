@@ -1,0 +1,13 @@
+# vsim -do {run -all; quit} -c sim_work.rsa_key_d_generator_tb 
+# Loading sim_work.rsa_key_d_generator_tb
+# Loading sim_work.rsa_key_d_generator
+# Loading sim_work.seq_div_unsigned
+# run -all 
+# === TEST CASE 1: Chay voi phi = 67072 ===
+# Gia tri private_d thu duoc =                                                                                                                                                                                                                                                                                                                 63489
+# => SUCCESS: Ket qua tinh d chinh xac tuyet doi!
+# === TEST CASE 2: Chay voi phi loi = 65537 ===
+# => SUCCESS: Mach da phat hien loi phi_invalid chinh xac!
+# === KET THUC QUA TRINH MO PHONG ===
+# ** Note: $finish    : rsa_key_d_generatot_tb.v(94)
+#    Time: 110290 ns  Iteration: 0  Instance: /rsa_key_d_generator_tb

@@ -1,0 +1,124 @@
+Flow report for RSA_Test_Quartus
+Thu May 21 10:43:23 2026
+Quartus II 64-Bit Version 13.0.1 Build 232 06/12/2013 Service Pack 1 SJ Web Edition
+
+
+---------------------
+; Table of Contents ;
+---------------------
+  1. Legal Notice
+  2. Flow Summary
+  3. Flow Settings
+  4. Flow Non-Default Global Settings
+  5. Flow Elapsed Time
+  6. Flow OS Summary
+  7. Flow Log
+  8. Flow Messages
+  9. Flow Suppressed Messages
+
+
+
+----------------
+; Legal Notice ;
+----------------
+Copyright (C) 1991-2013 Altera Corporation
+Your use of Altera Corporation's design tools, logic functions 
+and other software and tools, and its AMPP partner logic 
+functions, and any output files from any of the foregoing 
+(including device programming or simulation files), and any 
+associated documentation or information are expressly subject 
+to the terms and conditions of the Altera Program License 
+Subscription Agreement, Altera MegaCore Function License 
+Agreement, or other applicable license agreement, including, 
+without limitation, that your use is for the sole purpose of 
+programming logic devices manufactured by Altera and sold by 
+Altera or its authorized distributors.  Please refer to the 
+applicable agreement for further details.
+
+
+
++--------------------------------------------------------------------------------------+
+; Flow Summary                                                                         ;
++------------------------------------+-------------------------------------------------+
+; Flow Status                        ; Successful - Thu May 21 10:42:55 2026           ;
+; Quartus II 64-Bit Version          ; 13.0.1 Build 232 06/12/2013 SP 1 SJ Web Edition ;
+; Revision Name                      ; RSA_Test_Quartus                                ;
+; Top-level Entity Name              ; RSA_Top                                         ;
+; Family                             ; Cyclone IV GX                                   ;
+; Total logic elements               ; 41,345 / 73,920 ( 56 % )                        ;
+;     Total combinational functions  ; 30,929 / 73,920 ( 42 % )                        ;
+;     Dedicated logic registers      ; 38,229 / 73,920 ( 52 % )                        ;
+; Total registers                    ; 38229                                           ;
+; Total pins                         ; 13 / 307 ( 4 % )                                ;
+; Total virtual pins                 ; 3,920                                           ;
+; Total memory bits                  ; 67,616 / 4,257,792 ( 2 % )                      ;
+; Embedded Multiplier 9-bit elements ; 12 / 396 ( 3 % )                                ;
+; Total GXB Receiver Channel PCS     ; 0 / 4 ( 0 % )                                   ;
+; Total GXB Receiver Channel PMA     ; 0 / 4 ( 0 % )                                   ;
+; Total GXB Transmitter Channel PCS  ; 0 / 4 ( 0 % )                                   ;
+; Total GXB Transmitter Channel PMA  ; 0 / 4 ( 0 % )                                   ;
+; Total PLLs                         ; 0 / 6 ( 0 % )                                   ;
+; Device                             ; EP4CGX75CF23C6                                  ;
+; Timing Models                      ; Final                                           ;
++------------------------------------+-------------------------------------------------+
+
+
++-----------------------------------------+
+; Flow Settings                           ;
++-------------------+---------------------+
+; Option            ; Setting             ;
++-------------------+---------------------+
+; Start date & time ; 05/21/2026 10:34:29 ;
+; Main task         ; Compilation         ;
+; Revision Name     ; RSA_Test_Quartus    ;
++-------------------+---------------------+
+
+
++-------------------------------------------------------------------------------------------------------------------+
+; Flow Non-Default Global Settings                                                                                  ;
++-------------------------------------+-------------------------------+------------------+-------------+------------+
+; Assignment Name                     ; Value                         ; Default Value    ; Entity Name ; Section Id ;
++-------------------------------------+-------------------------------+------------------+-------------+------------+
+; COMPILER_SIGNATURE_ID               ; 2546504991840.177933446928472 ; --               ; --          ; --         ;
+; PARTITION_COLOR                     ; 16764057                      ; --               ; RSA_Top     ; Top        ;
+; PARTITION_FITTER_PRESERVATION_LEVEL ; PLACEMENT_AND_ROUTING         ; --               ; RSA_Top     ; Top        ;
+; PARTITION_NETLIST_TYPE              ; SOURCE                        ; --               ; RSA_Top     ; Top        ;
+; TOP_LEVEL_ENTITY                    ; RSA_Top                       ; RSA_Test_Quartus ; --          ; --         ;
++-------------------------------------+-------------------------------+------------------+-------------+------------+
+
+
++-------------------------------------------------------------------------------------------------------------------------------+
+; Flow Elapsed Time                                                                                                             ;
++---------------------------+--------------+-------------------------+---------------------+------------------------------------+
+; Module Name               ; Elapsed Time ; Average Processors Used ; Peak Virtual Memory ; Total CPU Time (on all processors) ;
++---------------------------+--------------+-------------------------+---------------------+------------------------------------+
+; Analysis & Synthesis      ; 00:02:55     ; 1.0                     ; 5157 MB             ; 00:02:48                           ;
+; Fitter                    ; 00:04:42     ; 2.4                     ; 6337 MB             ; 00:07:47                           ;
+; Assembler                 ; 00:00:15     ; 1.0                     ; 4780 MB             ; 00:00:14                           ;
+; TimeQuest Timing Analyzer ; 00:00:27     ; 1.4                     ; 5431 MB             ; 00:00:37                           ;
+; Total                     ; 00:08:19     ; --                      ; --                  ; 00:11:26                           ;
++---------------------------+--------------+-------------------------+---------------------+------------------------------------+
+
+
++----------------------------------------------------------------------------------------+
+; Flow OS Summary                                                                        ;
++---------------------------+------------------+-----------+------------+----------------+
+; Module Name               ; Machine Hostname ; OS Name   ; OS Version ; Processor type ;
++---------------------------+------------------+-----------+------------+----------------+
+; Analysis & Synthesis      ; DESKTOP-SVALI2U  ; Windows 7 ; 6.2        ; x86_64         ;
+; Fitter                    ; DESKTOP-SVALI2U  ; Windows 7 ; 6.2        ; x86_64         ;
+; Assembler                 ; DESKTOP-SVALI2U  ; Windows 7 ; 6.2        ; x86_64         ;
+; TimeQuest Timing Analyzer ; DESKTOP-SVALI2U  ; Windows 7 ; 6.2        ; x86_64         ;
++---------------------------+------------------+-----------+------------+----------------+
+
+
+------------
+; Flow Log ;
+------------
+quartus_map --read_settings_files=on --write_settings_files=off RSA_Test_Quartus -c RSA_Test_Quartus
+quartus_fit --read_settings_files=off --write_settings_files=off RSA_Test_Quartus -c RSA_Test_Quartus
+quartus_asm --read_settings_files=off --write_settings_files=off RSA_Test_Quartus -c RSA_Test_Quartus
+quartus_sta RSA_Test_Quartus -c RSA_Test_Quartus
+
+
+

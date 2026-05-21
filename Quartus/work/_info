@@ -1,0 +1,24 @@
+m255
+K3
+13
+cModel Technology
+Z0 dC:\altera\RSA_Test_Quartus
+vFast_R2_Mod_N
+!s100 ^>M[0Q`39l^fRC]dWNn^C1
+IgeO8Abng<_^l5?WcjXEzJ1
+VU>h?KX87?o>DMk19SzSIG1
+Z1 dC:\altera\RSA_Test_Quartus
+w1779299905
+8Fast_R2_Mod_N.v
+FFast_R2_Mod_N.v
+L0 1
+OV;L;10.1d;51
+r1
+!s85 0
+31
+!s108 1779299983.743000
+!s107 seq_div_unsigned.v|rsa_key_d_generator.v|serial_multiplier.v|Fast_R2_Mod_N.v|
+!s90 Fast_R2_Mod_N.v|serial_multiplier.v|rsa_key_d_generator.v|seq_div_unsigned.v|
+!s101 -O0
+o-O0
+n@fast_@r2_@mod_@n

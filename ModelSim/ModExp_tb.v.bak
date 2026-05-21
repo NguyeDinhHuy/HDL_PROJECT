@@ -14,6 +14,7 @@ module ModExp_tb;
 
     integer pass_count;
     integer fail_count;
+    integer wait_count;
 
     ModExp uut (
         .clk(clk),
@@ -40,8 +41,10 @@ module ModExp_tb;
 
     task wait_done;
         begin
-            while (!done) begin
+            wait_count = 0;
+            while (!done && wait_count < 600000000) begin
                 @(posedge clk);
+                wait_count = wait_count + 1;
             end
             #1;
         end
@@ -61,7 +64,10 @@ module ModExp_tb;
             pulse_start();
             wait_done();
 
-            if (result !== expected) begin
+            if (!done) begin
+                $display("FAIL: timeout base=%0d exp=%0d mod=%0d", in_base, in_exp, in_mod);
+                fail_count = fail_count + 1;
+            end else if (result !== expected) begin
                 $display("FAIL: %0d^%0d mod %0d got=%0d expected=%0d",
                          in_base, in_exp, in_mod, result, expected);
                 fail_count = fail_count + 1;

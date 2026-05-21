@@ -1,0 +1,3 @@
+Info (10281): Verilog HDL Declaration information at serial_multiplier.v(15): object "done" differs only in case from object "DONE" in the same scope
+Info (10281): Verilog HDL Declaration information at seq_div_unsigned.v(14): object "done" differs only in case from object "DONE" in the same scope
+Info (10281): Verilog HDL Declaration information at ModExp.v(14): object "done" differs only in case from object "DONE" in the same scope
